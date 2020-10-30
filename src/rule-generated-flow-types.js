@@ -7,6 +7,7 @@
 
 'use strict';
 
+const path = require('path');
 const utils = require('./utils');
 const shouldLint = utils.shouldLint;
 const getGraphQLAST = utils.getGraphQLAST;
@@ -20,7 +21,8 @@ function getOptions(optionValue) {
   if (optionValue) {
     return {
       fix: optionValue.fix || DEFAULT_FLOW_TYPES_OPTIONS.fix,
-      haste: optionValue.haste || DEFAULT_FLOW_TYPES_OPTIONS.haste
+      haste: optionValue.haste || DEFAULT_FLOW_TYPES_OPTIONS.haste,
+      artifactDirectory: optionValue.artifactDirectory
     };
   }
   return DEFAULT_FLOW_TYPES_OPTIONS;
@@ -37,6 +39,7 @@ function genImportFixRange(type, imports, requires) {
       specifier => (specifier.imported || specifier.local).name === type
     )
   );
+
   if (alreadyHasImport) {
     return null;
   }
@@ -60,20 +63,30 @@ function genImportFixRange(type, imports, requires) {
   return [0, 0];
 }
 
-function genImportFixer(fixer, importFixRange, type, haste, whitespace) {
+function genImportFixer(
+  fixer,
+  importFixRange,
+  type,
+  options,
+  filename,
+  whitespace
+) {
   if (!importFixRange) {
     // HACK: insert nothing
     return fixer.replaceTextRange([0, 0], '');
   }
-  if (haste) {
+  if (options.haste) {
     return fixer.insertTextAfterRange(
       importFixRange,
       `\n${whitespace}import type {${type}} from '${type}.graphql'`
     );
   } else {
+    const generatedDir = options.artifactDirectory
+      ? path.relative(path.dirname(filename), options.artifactDirectory)
+      : './__generated__';
     return fixer.insertTextAfterRange(
       importFixRange,
-      `\n${whitespace}import type {${type}} from './__generated__/${type}.graphql'`
+      `\n${whitespace}import type {${type}} from '${generatedDir}/${type}.graphql'`
     );
   }
 }
@@ -149,6 +162,7 @@ function getPropTypeProperty(
 
 function validateObjectTypeAnnotation(
   context,
+  options,
   Component,
   type,
   propName,
@@ -157,7 +171,6 @@ function validateObjectTypeAnnotation(
   typeAliasMap,
   onlyVerify
 ) {
-  const options = getOptions(context.options[0]);
   const propTypeProperty = getPropTypeProperty(
     context,
     typeAliasMap,
@@ -182,13 +195,20 @@ function validateObjectTypeAnnotation(
       },
       fix: options.fix
         ? fixer => {
-            const whitespace = ' '.repeat(Component.parent.loc.start.column);
+            const declaration =
+              Component.parent.type === 'VariableDeclarator'
+                ? Component.parent.parent
+                : Component.parent;
+
+            const whitespace = ' '.repeat(declaration.loc.start.column);
+
             const fixes = [
               genImportFixer(
                 fixer,
                 importFixRange,
                 type,
-                options.haste,
+                options,
+                context.getFilename(),
                 whitespace
               )
             ];
@@ -233,13 +253,19 @@ function validateObjectTypeAnnotation(
       },
       fix: options.fix
         ? fixer => {
-            const whitespace = ' '.repeat(Component.parent.loc.start.column);
+            const declaration =
+              Component.parent.type === 'VariableDeclarator'
+                ? Component.parent.parent
+                : Component.parent;
+
+            const whitespace = ' '.repeat(declaration.loc.start.column);
             return [
               genImportFixer(
                 fixer,
                 importFixRange,
                 type,
-                options.haste,
+                options,
+                context.getFilename(),
                 whitespace
               ),
               fixer.replaceText(propTypeProperty.value, type)
@@ -296,6 +322,9 @@ module.exports = {
           },
           haste: {
             type: 'boolean'
+          },
+          artifactDirectory: {
+            type: 'string'
           }
         },
         additionalProperties: false
@@ -307,6 +336,15 @@ module.exports = {
       return {};
     }
     const options = getOptions(context.options[0]);
+    if (
+      options.artifactDirectory &&
+      !path.isAbsolute(options.artifactDirectory)
+    ) {
+      options.artifactDirectory = path.resolve(
+        context.getCwd(),
+        options.artifactDirectory
+      );
+    }
     const componentMap = {};
     const expectedTypes = [];
     const imports = [];
@@ -399,7 +437,8 @@ module.exports = {
             fixer,
             importFixRange,
             operationName,
-            options.haste,
+            options,
+            context.getFilename(),
             ''
           ),
           fixer.insertTextAfter(node.callee, `<${typeText}>`)
@@ -433,6 +472,20 @@ module.exports = {
           node.init.callee.name === 'require'
         ) {
           requires.push(node);
+        }
+
+        if (node.init.type === 'ArrowFunctionExpression') {
+          const componentName = node.id.name;
+          componentMap[componentName] = {
+            Component: node.id
+          };
+          const params = node.init.params;
+          if (params.length > 0 && params[0].typeAnnotation) {
+            const propType = params[0].typeAnnotation.typeAnnotation;
+            if (propType) {
+              componentMap[componentName].propType = propType;
+            }
+          }
         }
       },
       TypeAlias(node) {
@@ -662,6 +715,18 @@ module.exports = {
             node.superTypeParameters.params[0];
         }
       },
+      FunctionDeclaration(node) {
+        const componentName = node.id.name;
+        componentMap[componentName] = {
+          Component: node.id
+        };
+        if (node.params.length > 0 && node.params[0].typeAnnotation) {
+          const propType = node.params[0].typeAnnotation.typeAnnotation;
+          if (propType) {
+            componentMap[componentName].propType = propType;
+          }
+        }
+      },
       TaggedTemplateExpression(node) {
         const ast = getGraphQLAST(node);
         if (!ast) {
@@ -777,8 +842,8 @@ module.exports = {
             // incorrect name, covered by graphql-naming/CallExpression
             return;
           }
-          const Component = componentMap[componentName].Component;
-          const propType = componentMap[componentName].propType;
+
+          const {Component, propType} = componentMap[componentName];
 
           // resolve local type alias
           const importedPropType = imports.reduce((acc, node) => {
@@ -796,11 +861,7 @@ module.exports = {
             return acc;
           }, type);
 
-          const importFixRange = genImportFixRange(
-            importedPropType,
-            imports,
-            requires
-          );
+          const importFixRange = genImportFixRange(type, imports, requires);
 
           if (propType) {
             // There exists a prop typeAnnotation. Let's look at how it's
@@ -809,6 +870,7 @@ module.exports = {
               case 'ObjectTypeAnnotation': {
                 validateObjectTypeAnnotation(
                   context,
+                  options,
                   Component,
                   importedPropType,
                   propName,
@@ -831,6 +893,7 @@ module.exports = {
                   case 'ObjectTypeAnnotation': {
                     validateObjectTypeAnnotation(
                       context,
+                      options,
                       Component,
                       importedPropType,
                       propName,
@@ -867,6 +930,7 @@ module.exports = {
                     for (const objectType of objectTypes) {
                       const isValid = validateObjectTypeAnnotation(
                         context,
+                        options,
                         Component,
                         importedPropType,
                         propName,
@@ -882,6 +946,7 @@ module.exports = {
                     // otherwise report an error at the first object
                     validateObjectTypeAnnotation(
                       context,
+                      options,
                       Component,
                       importedPropType,
                       propName,
@@ -906,35 +971,60 @@ module.exports = {
               },
               fix: options.fix
                 ? fixer => {
-                    const classBodyStart = Component.parent.body.body[0];
-                    if (!classBodyStart) {
-                      // HACK: There's nothing in the body. Let's not do anything
-                      // When something is added to the body, we'll have a fix
-                      return;
-                    }
+                    const declaration =
+                      Component.parent.type === 'VariableDeclarator'
+                        ? Component.parent.parent
+                        : Component.parent;
+
                     const aliasWhitespace = ' '.repeat(
-                      Component.parent.loc.start.column
+                      declaration.loc.start.column
                     );
-                    const propsWhitespace = ' '.repeat(
-                      classBodyStart.loc.start.column
-                    );
+
+                    let propsFix;
+
+                    if (Component.parent.type === 'ClassDeclaration') {
+                      propsFix = fixer.insertTextAfter(
+                        Component.parent.superClass,
+                        '<Props>'
+                      );
+                    } else if (Component.parent.type === 'VariableDeclarator') {
+                      propsFix = Component.parent.init.params[0]
+                        ? fixer.insertTextAfter(
+                            Component.parent.init.params[0],
+                            ': Props'
+                          )
+                        : fixer.insertTextAfterRange(
+                            [0, Component.parent.init.range[0] + 1],
+                            'props: Props'
+                          );
+                    } else {
+                      // FunctionDeclarator
+                      propsFix = Component.parent.params[0]
+                        ? fixer.insertTextAfter(
+                            Component.parent.params[0],
+                            ': Props'
+                          )
+                        : fixer.insertTextAfterRange(
+                            [0, Component.parent.id.range[1] + 1],
+                            'props: Props'
+                          );
+                    }
+
                     return [
                       genImportFixer(
                         fixer,
                         importFixRange,
                         importedPropType,
-                        options.haste,
+                        options,
+                        context.getFilename(),
                         aliasWhitespace
                       ),
                       fixer.insertTextBefore(
-                        Component.parent,
+                        declaration,
                         `type Props = {${propName}: ` +
                           `${importedPropType}};\n\n${aliasWhitespace}`
                       ),
-                      fixer.insertTextBefore(
-                        classBodyStart,
-                        `props: Props;\n\n${propsWhitespace}`
-                      )
+                      propsFix
                     ];
                   }
                 : null,

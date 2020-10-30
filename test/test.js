@@ -10,7 +10,6 @@
 const rules = require('..').rules;
 const RuleTester = require('eslint').RuleTester;
 
-const HAS_ESLINT_BEEN_UPGRADED_YET = false;
 const DEFAULT_OPTIONS = [
   {
     fix: true,
@@ -579,6 +578,7 @@ ruleTester.run('generated-flow-types', rules['generated-flow-types'], {
       `
     }
   ]),
+
   invalid: [
     {
       // imports TestFragment_other$key instead of TestFragment_foo$key
@@ -1050,12 +1050,129 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
       ]
     },
     {
+      filename: 'MyComponent.jsx',
+      code: `
+        const MyComponent = (props: {}) => {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
+        const MyComponent = (props: {user: MyComponent_user}) => {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      errors: [
+        {
+          message:
+            '`user` is not declared in the `props` of the React component or ' +
+            'it is not marked with the generated flow type ' +
+            '`MyComponent_user`. See ' +
+            'https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
+          line: 2,
+          column: 15
+        }
+      ]
+    },
+    {
+      filename: 'MyComponent.jsx',
+      code: `
+        function MyComponent(props: {}) {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
+        function MyComponent(props: {user: MyComponent_user}) {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      errors: [
+        {
+          message:
+            '`user` is not declared in the `props` of the React component or ' +
+            'it is not marked with the generated flow type ' +
+            '`MyComponent_user`. See ' +
+            'https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
+          line: 2,
+          column: 18
+        }
+      ]
+    },
+    {
+      filename: 'root/path/to/MyComponent.jsx',
+      code: `
+        function MyComponent(props: {}) {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      options: [{fix: true, artifactDirectory: 'root/__generated__'}],
+      output: `
+        import type {MyComponent_user} from '../../__generated__/MyComponent_user.graphql'
+        function MyComponent(props: {user: MyComponent_user}) {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      errors: [
+        {
+          message:
+            '`user` is not declared in the `props` of the React component or ' +
+            'it is not marked with the generated flow type ' +
+            '`MyComponent_user`. See ' +
+            'https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
+          line: 2,
+          column: 18
+        }
+      ]
+    },
+    {
       filename: 'Profile.js',
       code: `
         type Props = {
           user: ?{
             id: number,
           },
+        };
+        class Profile extends React.Component<Props> {}
+        createFragmentContainer(Profile, {
+          user: graphql\`
+            fragment Profile_user on User {
+              id
+            }
+          \`,
+        });
+      `,
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {Profile_user} from './__generated__/Profile_user.graphql'
+        type Props = {
+          user: Profile_user,
         };
         class Profile extends React.Component<Props> {}
         createFragmentContainer(Profile, {
@@ -1074,6 +1191,92 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
             'https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
           line: 7,
           column: 15
+        }
+      ]
+    },
+    {
+      filename: 'Profile.js',
+      code: `
+        type Props = {
+          user: ?{
+            id: number,
+          },
+        };
+        const Profile = (props: Props) => {}
+        createFragmentContainer(Profile, {
+          user: graphql\`
+            fragment Profile_user on User {
+              id
+            }
+          \`,
+        });
+      `,
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {Profile_user} from './__generated__/Profile_user.graphql'
+        type Props = {
+          user: Profile_user,
+        };
+        const Profile = (props: Props) => {}
+        createFragmentContainer(Profile, {
+          user: graphql\`
+            fragment Profile_user on User {
+              id
+            }
+          \`,
+        });
+      `,
+      errors: [
+        {
+          message:
+            'Component property `user` expects to use the generated ' +
+            '`Profile_user` flow type. See ' +
+            'https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
+          line: 7,
+          column: 15
+        }
+      ]
+    },
+    {
+      filename: 'Profile.js',
+      code: `
+        type Props = {
+          user: ?{
+            id: number,
+          },
+        };
+        function Profile(props: Props) {}
+        createFragmentContainer(Profile, {
+          user: graphql\`
+            fragment Profile_user on User {
+              id
+            }
+          \`,
+        });
+      `,
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {Profile_user} from './__generated__/Profile_user.graphql'
+        type Props = {
+          user: Profile_user,
+        };
+        function Profile(props: Props) {}
+        createFragmentContainer(Profile, {
+          user: graphql\`
+            fragment Profile_user on User {
+              id
+            }
+          \`,
+        });
+      `,
+      errors: [
+        {
+          message:
+            'Component property `user` expects to use the generated ' +
+            '`Profile_user` flow type. See ' +
+            'https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
+          line: 7,
+          column: 18
         }
       ]
     },
@@ -1116,6 +1319,70 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
     {
       filename: 'MyComponent.jsx',
       code: `
+        const MyComponent = (props: {somethingElse: number}) => {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
+        const MyComponent = (props: {user: MyComponent_user, somethingElse: number}) => {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      errors: [
+        {
+          message:
+            '`user` is not declared in the `props` of the React component or it is not marked with the generated flow type `MyComponent_user`. ' +
+            'See https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
+          line: 2,
+          column: 15
+        }
+      ]
+    },
+    {
+      filename: 'MyComponent.jsx',
+      code: `
+        function MyComponent(props: {somethingElse: number}) {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
+        function MyComponent(props: {user: MyComponent_user, somethingElse: number}) {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      errors: [
+        {
+          message:
+            '`user` is not declared in the `props` of the React component or it is not marked with the generated flow type `MyComponent_user`. ' +
+            'See https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
+          line: 2,
+          column: 18
+        }
+      ]
+    },
+    {
+      filename: 'MyComponent.jsx',
+      code: `
         class MyComponent extends React.Component<{user: number}> {
           render() {
             return <div />;
@@ -1146,6 +1413,70 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
             '`MyComponent_user` flow type. See https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
           line: 2,
           column: 15
+        }
+      ]
+    },
+    {
+      filename: 'MyComponent.jsx',
+      code: `
+        const MyComponent = (props: {user: number}) => {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
+        const MyComponent = (props: {user: MyComponent_user}) => {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      errors: [
+        {
+          message:
+            'Component property `user` expects to use the generated ' +
+            '`MyComponent_user` flow type. See https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
+          line: 2,
+          column: 15
+        }
+      ]
+    },
+    {
+      filename: 'MyComponent.jsx',
+      code: `
+        function MyComponent(props: {user: number}) {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
+        function MyComponent(props: {user: MyComponent_user}) {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      errors: [
+        {
+          message:
+            'Component property `user` expects to use the generated ' +
+            '`MyComponent_user` flow type. See https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
+          line: 2,
+          column: 18
         }
       ]
     },
@@ -1380,8 +1711,8 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
       `,
-      output: HAS_ESLINT_BEEN_UPGRADED_YET
-        ? `
+      options: DEFAULT_OPTIONS,
+      output: `
         import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
         type Props = {user: MyComponent_user};
 
@@ -1394,8 +1725,7 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
         createFragmentContainer(MyComponent, {
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
-      `
-        : null,
+      `,
       errors: [
         {
           message:
@@ -1403,6 +1733,142 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
             '`MyComponent_user` flow type. See https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
           line: 2,
           column: 15
+        }
+      ]
+    },
+    {
+      filename: 'MyComponent.jsx',
+      code: `
+        const MyComponent = () => {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
+        type Props = {user: MyComponent_user};
+
+        const MyComponent = (props: Props) => {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      errors: [
+        {
+          message:
+            'Component property `user` expects to use the generated ' +
+            '`MyComponent_user` flow type. See https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
+          line: 2,
+          column: 15
+        }
+      ]
+    },
+    {
+      filename: 'MyComponent.jsx',
+      code: `
+        const MyComponent = (props) => {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
+        type Props = {user: MyComponent_user};
+
+        const MyComponent = (props: Props) => {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      errors: [
+        {
+          message:
+            'Component property `user` expects to use the generated ' +
+            '`MyComponent_user` flow type. See https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
+          line: 2,
+          column: 15
+        }
+      ]
+    },
+    {
+      filename: 'MyComponent.jsx',
+      code: `
+        function MyComponent() {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
+        type Props = {user: MyComponent_user};
+
+        function MyComponent(props: Props) {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      errors: [
+        {
+          message:
+            'Component property `user` expects to use the generated ' +
+            '`MyComponent_user` flow type. See https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
+          line: 2,
+          column: 18
+        }
+      ]
+    },
+    {
+      filename: 'MyComponent.jsx',
+      code: `
+        function MyComponent(props) {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
+        type Props = {user: MyComponent_user};
+
+        function MyComponent(props: Props) {
+          return <div />;
+        }
+
+        createFragmentContainer(MyComponent, {
+          user: graphql\`fragment MyComponent_user on User {id}\`,
+        });
+      `,
+      errors: [
+        {
+          message:
+            'Component property `user` expects to use the generated ' +
+            '`MyComponent_user` flow type. See https://facebook.github.io/relay/docs/en/graphql-in-relay.html#importing-generated-definitions',
+          line: 2,
+          column: 18
         }
       ]
     },
@@ -1419,9 +1885,8 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
       `,
-      options: [{haste: true}],
-      output: HAS_ESLINT_BEEN_UPGRADED_YET
-        ? `
+      options: [{haste: true, fix: true}],
+      output: `
         import type {MyComponent_user} from 'MyComponent_user.graphql'
         type Props = {user: MyComponent_user};
 
@@ -1434,8 +1899,7 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
         createFragmentContainer(MyComponent, {
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
-      `
-        : null,
+      `,
       errors: [
         {
           message:
@@ -1461,8 +1925,8 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
       `,
-      output: HAS_ESLINT_BEEN_UPGRADED_YET
-        ? `
+      options: DEFAULT_OPTIONS,
+      output: `
         import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
 
         type Props = {user: MyComponent_user};
@@ -1476,8 +1940,7 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
         createFragmentContainer(MyComponent, {
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
-      `
-        : null,
+      `,
       errors: [
         {
           message:
@@ -1504,8 +1967,8 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
       `,
-      output: HAS_ESLINT_BEEN_UPGRADED_YET
-        ? `
+      options: DEFAULT_OPTIONS,
+      output: `
         import type aaa from 'aaa'
         import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
         import type zzz from 'zzz'
@@ -1521,8 +1984,7 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
         createFragmentContainer(MyComponent, {
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
-      `
-        : null,
+      `,
       errors: [
         {
           message:
@@ -1549,8 +2011,8 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
       `,
-      output: HAS_ESLINT_BEEN_UPGRADED_YET
-        ? `
+      options: DEFAULT_OPTIONS,
+      output: `
         import type {aaa} from 'aaa'
         import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
         import type zzz from 'zzz'
@@ -1566,8 +2028,7 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
         createFragmentContainer(MyComponent, {
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
-      `
-        : null,
+      `,
       errors: [
         {
           message:
@@ -1594,8 +2055,8 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
       `,
-      output: HAS_ESLINT_BEEN_UPGRADED_YET
-        ? `
+      options: DEFAULT_OPTIONS,
+      output: `
         import {aaa} from 'aaa'
         import zzz from 'zzz'
         import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
@@ -1611,8 +2072,7 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
         createFragmentContainer(MyComponent, {
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
-      `
-        : null,
+      `,
       errors: [
         {
           message:
@@ -1639,8 +2099,8 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
       `,
-      output: HAS_ESLINT_BEEN_UPGRADED_YET
-        ? `
+      options: DEFAULT_OPTIONS,
+      output: `
         const aaa = require('aaa')
         const zzz = require('zzz')
         import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
@@ -1656,8 +2116,7 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
         createFragmentContainer(MyComponent, {
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
-      `
-        : null,
+      `,
       errors: [
         {
           message:
@@ -1688,8 +2147,8 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
       `,
-      output: HAS_ESLINT_BEEN_UPGRADED_YET
-        ? `
+      options: DEFAULT_OPTIONS,
+      output: `
         const aaa = require('aaa')
 
         import zzz from 'zzz'
@@ -1709,8 +2168,7 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
         createFragmentContainer(MyComponent, {
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
-      `
-        : null,
+      `,
       errors: [
         {
           message:
@@ -1737,8 +2195,8 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
       `,
-      output: HAS_ESLINT_BEEN_UPGRADED_YET
-        ? `
+      options: DEFAULT_OPTIONS,
+      output: `
         import {aaa} from 'aaa'
         import zzz from 'zzz'
         import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
@@ -1754,8 +2212,7 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
         createFragmentContainer(MyComponent, {
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
-      `
-        : null,
+      `,
       errors: [
         {
           message:
@@ -1769,7 +2226,7 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
     {
       filename: 'MyComponent.jsx',
       code: `
-        import type {MyComponent_user as User} from 'aaa'
+        import type {MyComponent_user as User} from './__generated__/User.graphql'
 
         class MyComponent extends React.Component<{ user: MyComponent_user }> {
           render() {
@@ -1781,9 +2238,9 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
       `,
-      output: HAS_ESLINT_BEEN_UPGRADED_YET
-        ? `
-        import type {MyComponent_user as User} from 'aaa'
+      options: DEFAULT_OPTIONS,
+      output: `
+        import type {MyComponent_user as User} from './__generated__/User.graphql'
 
         class MyComponent extends React.Component<{ user: User }> {
           render() {
@@ -1794,8 +2251,7 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
         createFragmentContainer(MyComponent, {
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
-      `
-        : null,
+      `,
       errors: [
         {
           message:
@@ -1827,10 +2283,18 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
       `,
-      output: HAS_ESLINT_BEEN_UPGRADED_YET
-        ? `
+      options: DEFAULT_OPTIONS,
+      output: `
         import type {MyComponent_user} from './__generated__/MyComponent_user.graphql'
-        class MyComponent extends React.Component<{user: MyComponent_user}> {
+        type OtherProps = {
+          other: string
+        }
+
+        type Props = {
+          user: MyComponent_user,
+        } & OtherProps;
+
+        class MyComponent extends React.Component<Props> {
           render() {
             return <div />;
           }
@@ -1839,8 +2303,7 @@ import type {FooSubscription} from './__generated__/FooSubscription.graphql'
         createFragmentContainer(MyComponent, {
           user: graphql\`fragment MyComponent_user on User {id}\`,
         });
-      `
-        : null,
+      `,
       errors: [
         {
           message:
